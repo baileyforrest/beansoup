@@ -132,8 +132,90 @@ fn split(node_option: Link, index: usize) -> (Link, Link, usize) {
     (Some(node), right_split, right_split_size)
 }
 
-fn balance(node: &mut Link) {
-    // TODO: This
+fn rotate_right(mut node: Link) -> Link {
+    let mut x = mem::replace(&mut node.as_mut().unwrap().left, None);
+    node.as_mut().unwrap().left = mem::replace(&mut x.as_mut().unwrap().right, node.take());
+    node.as_mut().unwrap().size -= x.as_ref().unwrap().size;
+    x
+}
+
+fn rotate_left(mut node: Link) -> Link {
+    let mut x = mem::replace(&mut node.as_mut().unwrap().right, None);
+    node.as_mut().unwrap().right = mem::replace(&mut x.as_mut().unwrap().left, node.take());
+    x.as_mut().unwrap().size += node.as_ref().unwrap().size;
+    x
+}
+
+// TODO: Remove single child nodes.
+// TODO: This is hideous
+fn splay(mut node: Link, idx: usize) -> Link {
+    if node.is_none() {
+        panic!("Not reached");
+    }
+    if node.as_ref().unwrap().buf.is_some() {
+        return None;
+    }
+
+    if node.as_ref().unwrap().size >= idx {
+        if node.as_mut().unwrap().left.as_mut().unwrap().size >= idx {
+            node.as_mut().unwrap().left.as_mut().unwrap().left =
+                splay(mem::replace(&mut node.as_mut().unwrap().left.as_mut().unwrap().left,
+                                   None),
+                      idx);
+            node = rotate_right(node);
+        } else {
+            node.as_mut().unwrap().left.as_mut().unwrap().right =
+                splay(mem::replace(&mut node.as_mut().unwrap().left.as_mut().unwrap().right,
+                                   None),
+                      idx - node.as_mut().unwrap().left.as_mut().unwrap().size);
+            if node.as_mut()
+                   .unwrap()
+                   .left
+                   .as_mut()
+                   .unwrap()
+                   .right
+                   .is_some() {
+                node.as_mut().unwrap().left =
+                    rotate_left(mem::replace(&mut node.as_mut().unwrap().left, None));
+            }
+        }
+
+        if node.as_ref().unwrap().left.is_none() {
+            return node;
+        } else {
+            return rotate_right(node);
+        }
+    } else {
+        let new_idx = idx - node.as_ref().unwrap().size;
+        if node.as_mut().unwrap().right.as_mut().unwrap().size >= new_idx {
+            node.as_mut().unwrap().right.as_mut().unwrap().left =
+                splay(mem::replace(&mut node.as_mut().unwrap().right.as_mut().unwrap().left,
+                                   None),
+                      new_idx);
+            if node.as_mut()
+                   .unwrap()
+                   .right
+                   .as_mut()
+                   .unwrap()
+                   .left
+                   .is_some() {
+                node.as_mut().unwrap().right =
+                    rotate_right(mem::replace(&mut node.as_mut().unwrap().right, None));
+            }
+        } else {
+            node.as_mut().unwrap().right.as_mut().unwrap().right =
+                splay(mem::replace(&mut node.as_mut().unwrap().right.as_mut().unwrap().right,
+                                   None),
+                      new_idx - node.as_mut().unwrap().right.as_mut().unwrap().size);
+            node = rotate_left(node);
+        }
+
+        if node.as_ref().unwrap().right.is_none() {
+            return node;
+        } else {
+            return rotate_left(node);
+        }
+    }
 }
 
 fn report(node_option: &Link, idx: usize, len: usize, mut out: &mut Vec<u32>) -> usize {
@@ -171,19 +253,27 @@ impl Buffer {
     pub fn insert(&mut self, idx: usize, data: Vec<u32>) {
         let (left, right, _) = split(mem::replace(&mut self.root, None), idx);
         self.root = concat(left, right);
-        balance(&mut self.root);
     }
 
     pub fn delete(&mut self, idx: usize, len: usize) {
         let (left, right, _) = split(mem::replace(&mut self.root, None), idx);
         let (_, remain_right, _) = split(right, len);
         self.root = concat(left, remain_right);
-        balance(&mut self.root);
     }
 
-    pub fn report(&mut self, idx: usize, len: usize) -> Vec<u32> {
+    pub fn report(&self, idx: usize, len: usize) -> Vec<u32> {
         let mut out = Vec::new();
         report(&self.root, idx, len, &mut out);
         out
     }
+
+    pub fn len(&self) -> usize {
+        length(&self.root)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_works() {}
 }
