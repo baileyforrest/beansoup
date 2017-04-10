@@ -1,6 +1,5 @@
 use std::cmp;
 use std::ops::{Index, IndexMut};
-use std::mem;
 
 type Link = Option<Box<Node>>;
 
@@ -73,7 +72,15 @@ fn length(node: &Link) -> usize {
     }
 }
 
-fn concat(n1: Link, n2: Link) -> Link {
+fn concat(mut n1: Link, n2: Link) -> Link {
+    if n1.is_none() {
+        return n2;
+    }
+    if n2.is_none() {
+        return n1;
+    }
+
+    n1 = splay(n1, usize::max_value());
     Some(Box::new(Node {
                       size: length(&n1),
                       left: n1,
@@ -90,7 +97,7 @@ fn split(node_option: Link, index: usize) -> (Link, Link, usize) {
     let mut node = node_option.unwrap();
 
     if node.size < index {
-        let (new_right, right_split, right_split_size) = split(mem::replace(&mut node.right, None),
+        let (new_right, right_split, right_split_size) = split(node.right.take(),
                                                                index - node.size);
         node.right = new_right;
         return (Some(node), right_split, right_split_size);
@@ -100,6 +107,11 @@ fn split(node_option: Link, index: usize) -> (Link, Link, usize) {
         if index == 0 {
             let node_size = node.size;
             return (None, Some(node), node_size);
+        }
+
+        // We're concatenating to the end. Just return None instead of creating an empty node.
+        if node.size == index {
+            return (Some(node), None, 0);
         }
 
         let new_right_size = node.size - index;
@@ -119,29 +131,30 @@ fn split(node_option: Link, index: usize) -> (Link, Link, usize) {
         return (Some(node), Some(new_right), new_right_size);
     };
 
-    let (new_left, mut right_split, mut right_split_size) =
-        split(mem::replace(&mut node.left, None), index);
+    let (new_left, mut right_split, mut right_split_size) = split(node.left.take(), index);
     node.size -= right_split_size;
     node.left = new_left;
 
     if node.size == index && node.right.is_some() {
         right_split_size += length(&node.right);
-        right_split = concat(right_split, mem::replace(&mut node.right, None));
+        right_split = concat(right_split, node.right.take());
     }
 
     (Some(node), right_split, right_split_size)
 }
 
 fn rotate_right(mut node: Link) -> Link {
-    let mut x = mem::replace(&mut node.as_mut().unwrap().left, None);
-    node.as_mut().unwrap().left = mem::replace(&mut x.as_mut().unwrap().right, node.take());
+    let mut x = node.as_mut().unwrap().left.take();
+    node.as_mut().unwrap().left = x.as_mut().unwrap().right.take();
+    x.as_mut().unwrap().right = node.take();
     node.as_mut().unwrap().size -= x.as_ref().unwrap().size;
     x
 }
 
 fn rotate_left(mut node: Link) -> Link {
-    let mut x = mem::replace(&mut node.as_mut().unwrap().right, None);
-    node.as_mut().unwrap().right = mem::replace(&mut x.as_mut().unwrap().left, node.take());
+    let mut x = node.as_mut().unwrap().right.take();
+    node.as_mut().unwrap().right = x.as_mut().unwrap().left.take();
+    x.as_mut().unwrap().left = node.take();
     x.as_mut().unwrap().size += node.as_ref().unwrap().size;
     x
 }
@@ -150,23 +163,32 @@ fn rotate_left(mut node: Link) -> Link {
 // TODO: This is hideous
 fn splay(mut node: Link, idx: usize) -> Link {
     if node.is_none() {
-        panic!("Not reached");
+        return node;
     }
     if node.as_ref().unwrap().buf.is_some() {
-        return None;
+        return node;
     }
 
     if node.as_ref().unwrap().size >= idx {
         if node.as_mut().unwrap().left.as_mut().unwrap().size >= idx {
-            node.as_mut().unwrap().left.as_mut().unwrap().left =
-                splay(mem::replace(&mut node.as_mut().unwrap().left.as_mut().unwrap().left,
-                                   None),
-                      idx);
+            node.as_mut().unwrap().left.as_mut().unwrap().left = splay(node.as_mut()
+                                                                           .unwrap()
+                                                                           .left
+                                                                           .as_mut()
+                                                                           .unwrap()
+                                                                           .left
+                                                                           .take(),
+                                                                       idx);
             node = rotate_right(node);
         } else {
             node.as_mut().unwrap().left.as_mut().unwrap().right =
-                splay(mem::replace(&mut node.as_mut().unwrap().left.as_mut().unwrap().right,
-                                   None),
+                splay(node.as_mut()
+                          .unwrap()
+                          .left
+                          .as_mut()
+                          .unwrap()
+                          .right
+                          .take(),
                       idx - node.as_mut().unwrap().left.as_mut().unwrap().size);
             if node.as_mut()
                    .unwrap()
@@ -175,8 +197,7 @@ fn splay(mut node: Link, idx: usize) -> Link {
                    .unwrap()
                    .right
                    .is_some() {
-                node.as_mut().unwrap().left =
-                    rotate_left(mem::replace(&mut node.as_mut().unwrap().left, None));
+                node.as_mut().unwrap().left = rotate_left(node.as_mut().unwrap().left.take());
             }
         }
 
@@ -188,10 +209,14 @@ fn splay(mut node: Link, idx: usize) -> Link {
     } else {
         let new_idx = idx - node.as_ref().unwrap().size;
         if node.as_mut().unwrap().right.as_mut().unwrap().size >= new_idx {
-            node.as_mut().unwrap().right.as_mut().unwrap().left =
-                splay(mem::replace(&mut node.as_mut().unwrap().right.as_mut().unwrap().left,
-                                   None),
-                      new_idx);
+            node.as_mut().unwrap().right.as_mut().unwrap().left = splay(node.as_mut()
+                                                                            .unwrap()
+                                                                            .right
+                                                                            .as_mut()
+                                                                            .unwrap()
+                                                                            .left
+                                                                            .take(),
+                                                                        new_idx);
             if node.as_mut()
                    .unwrap()
                    .right
@@ -199,13 +224,17 @@ fn splay(mut node: Link, idx: usize) -> Link {
                    .unwrap()
                    .left
                    .is_some() {
-                node.as_mut().unwrap().right =
-                    rotate_right(mem::replace(&mut node.as_mut().unwrap().right, None));
+                node.as_mut().unwrap().right = rotate_right(node.as_mut().unwrap().right.take());
             }
         } else {
             node.as_mut().unwrap().right.as_mut().unwrap().right =
-                splay(mem::replace(&mut node.as_mut().unwrap().right.as_mut().unwrap().right,
-                                   None),
+                splay(node.as_mut()
+                          .unwrap()
+                          .right
+                          .as_mut()
+                          .unwrap()
+                          .right
+                          .take(),
                       new_idx - node.as_mut().unwrap().right.as_mut().unwrap().size);
             node = rotate_left(node);
         }
@@ -251,17 +280,33 @@ impl Buffer {
     }
 
     pub fn insert(&mut self, idx: usize, data: Vec<u32>) {
-        let (left, right, _) = split(mem::replace(&mut self.root, None), idx);
-        self.root = concat(left, right);
+        let new_node = Some(Box::new(Node {
+                                         size: data.len(),
+                                         left: None,
+                                         right: None,
+                                         buf: Some(data),
+                                     }));
+        if self.root.is_none() {
+            self.root = new_node;
+            return;
+        }
+
+        self.root = splay(self.root.take(), idx);
+        let (left, right, _) = split(self.root.take(), idx);
+        let temp = concat(left, new_node);
+        self.root = concat(temp, right);
     }
 
     pub fn delete(&mut self, idx: usize, len: usize) {
-        let (left, right, _) = split(mem::replace(&mut self.root, None), idx);
+        self.root = splay(self.root.take(), idx);
+        let (left, mut right, _) = split(self.root.take(), idx);
+        right = splay(right.take(), len);
         let (_, remain_right, _) = split(right, len);
         self.root = concat(left, remain_right);
     }
 
-    pub fn report(&self, idx: usize, len: usize) -> Vec<u32> {
+    pub fn report(&mut self, idx: usize, len: usize) -> Vec<u32> {
+        self.root = splay(self.root.take(), idx);
         let mut out = Vec::new();
         report(&self.root, idx, len, &mut out);
         out
@@ -274,6 +319,32 @@ impl Buffer {
 
 #[cfg(test)]
 mod tests {
+    use buffer::Buffer;
+
     #[test]
-    fn it_works() {}
+    fn create() {
+        let buf = Buffer::new();
+        assert_eq!(buf.len(), 0);
+    }
+
+    #[test]
+    fn insert_one() {
+        let test_vec = vec![1, 2, 3, 4];
+        let mut buf = Buffer::new();
+        buf.insert(0, test_vec.clone());
+        assert_eq!(buf.len(), 4);
+        let contents = buf.report(0, 4);
+        assert_eq!(contents, test_vec);
+    }
+
+    #[test]
+    fn insert_two() {
+        let mut buf = Buffer::new();
+        buf.insert(0, vec![1, 2, 3, 4]);
+        assert_eq!(buf.len(), 4);
+        buf.insert(4, vec![5, 6, 7, 8]);
+        assert_eq!(buf.len(), 8);
+        let contents = buf.report(0, 4);
+        assert_eq!(contents, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    }
 }
