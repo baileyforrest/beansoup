@@ -1,5 +1,7 @@
-mod screen;
+mod buffer;
 mod frame_buffer;
+mod screen;
+mod window;
 
 use screen::Screen;
 use frame_buffer::FrameBuffer;
